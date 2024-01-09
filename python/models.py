@@ -2,6 +2,7 @@ import pickle
 from abc import abstractmethod
 
 import numpy as np
+from gurobipy import Model, GRB, quicksum, max_
 
 
 class BaseModel(object):
@@ -160,7 +161,7 @@ class TwoClustersMIP(BaseModel):
     You have to encapsulate your code within this class that will be called for evaluation.
     """
 
-    def __init__(self, n_pieces, n_clusters):
+    def __init__(self, n_pieces, n_clusters, epsilon):
         """Initialization of the MIP Variables
 
         Parameters
@@ -171,12 +172,16 @@ class TwoClustersMIP(BaseModel):
             Number of clusters to implement in the MIP.
         """
         self.seed = 123
+        self.L = n_pieces
+        self.K = n_clusters
+        self.epsilon = epsilon
         self.model = self.instantiate()
 
     def instantiate(self):
         """Instantiation of the MIP Variables - To be completed."""
-        # To be completed
-        return
+        np.random.seed(self.seed)
+        model = Model("TwoClustersMIP")
+        return model
 
     def fit(self, X, Y):
         """Estimation of the parameters - To be completed.
@@ -188,9 +193,119 @@ class TwoClustersMIP(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
+        self.n = X.shape[1]
+        self.P = X.shape[0]
+        maxs = np.max(np.concatenate([X, Y], axis=0), axis=0)
+        mins = np.min(np.concatenate([X, Y], axis=0), axis=0)
 
-        # To be completed
-        return
+        def get_last_index(x, i):
+            segments = np.linspace(mins[i], maxs[i], self.L + 1)
+            last_index = np.argmax(x < segments) - 1
+            if last_index == -1:
+                if x == mins[i]:
+                    return 0
+                else:
+                    return len(segments) - 2
+            return last_index
+        
+        def get_bp(i, l):
+            segments = np.linspace(mins[i], maxs[i], self.L + 1)
+            if l >= len(segments):
+                return segments[-1]
+            return segments[l]
+
+        # Vars
+        ## Utilitary functions
+        self.U = {
+            (k, i, l): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="u_{}_{}_{}".format(k, i, l))
+                for k in range(self.K)
+                for i in range(self.n)
+                for l in range(self.L+1)
+        }
+        ## over-est and under-est
+        self.sigmaxp = {
+            (k, j): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="sigma_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
+        self.sigmayp = {
+            (k, j): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="sigma_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
+
+        self.sigmaxm = {
+            (k, j): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="sigma_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
+        self.sigmaym = {
+            (k, j): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="sigma_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
+
+        # self.max_comp = {
+        #     (k, j): self.model.addVar(
+        #         vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="max_comp_{}_{}".format(k, j))
+        #         for k in range(self.K)
+        #         for j in range(self.P)
+        # }
+        self.sup = {
+            (k, j): self.model.addVar(
+                vtype=GRB.BINARY, name="sup_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
+
+        # Constraints
+        ## Preference matching : $\forall j \in \{1,\dots,P\}, \exists k \in \{1,\dots,K\}, u_k(X[j]) - u_k(Y[j]) - \epsilon \geq 0$
+        # self.model.addConstrs(
+        #     (quicksum((
+        #         self.max_comp[k, j] for k in range(self.K))) >= 0 for j in range(self.P)
+        #         )
+        # )
+        
+        # self.model.addConstrs(
+        #     (self.max_comp[k,j] == max_(0, quicksum((self.U[k, i, get_last_index(X[j, i], i)] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i)))/(get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))*(self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)]) for i in range(self.n))) - self.sigmaxp[k, j] + self.sigmaxm[k, j] -\
+        #                    quicksum((self.U[k, i, get_last_index(Y[j, i], i)] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i)))/(get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))*(self.U[k, i, get_last_index(Y[j, i], i)+1] - self.U[k, i, get_last_index(Y[j, i], i)]) for i in range(self.n))) + self.sigmayp[k, j] - self.sigmaym[k, j] - self.epsilon) for j in range(self.P) for k in range(self.K)))
+        
+        self.model.addConstrs(
+            (quicksum((self.sup[k,j] for k in range(self.K))) >= 1 for j in range(self.P))
+        )
+
+        # define sup[k,j] as being an indicator variable for the preference of X over Y : sup[k,j] = 1 if utilitary function of X is greater than utilitary function of Y, 0 otherwise
+        self.model.addConstrs(
+            (self.sup[k,j] == 1 - quicksum((self.U[k, i, get_last_index(X[j, i], i)] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i)))/(get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))*(self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)]) for i in range(self.n))) + self.sigmaxp[k, j] - self.sigmaxm[k, j] -\
+                           quicksum((self.U[k, i, get_last_index(Y[j, i], i)] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i)))/(get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))*(self.U[k, i, get_last_index(Y[j, i], i)+1] - self.U[k, i, get_last_index(Y[j, i], i)]) for i in range(self.n))) + self.sigmayp[k, j] - self.sigmaym[k, j] - self.epsilon) for j in range(self.P) for k in range(self.K))
+
+
+        ## Monothonicity : 
+        self.model.addConstrs(
+            (quicksum((self.U[k, i, l] - self.U[k, i, l+1]) for l in range(self.L-1)) >= self.epsilon for k in range(self.K) for i in range(self.n)))
+        
+        # Objective
+        self.model.setObjective(quicksum((self.sigmaxp[k, j] + self.sigmaxm[k, j] + self.sigmayp[k, j] + self.sigmaym[k, j]) for k in range(self.K) for j in range(self.P)), GRB.MINIMIZE)
+
+        # Solve
+        self.model.params.outputflag = 0  # mode muet
+        self.model.update()
+        self.model.optimize()
+        if self.model.status == GRB.INFEASIBLE:
+            print("\n le PROGRAMME N'A PAS DE SOLUTION!!!")
+            raise Exception("Infeasible")
+        elif self.model.status == GRB.UNBOUNDED:
+            print("\n le PROGRAMME EST NON BORNÉ!!!")
+            raise Exception("Unbounded")
+        else:
+            print("\n le PROGRAMME A UNE SOLUTION!!!")
+            self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K+1) for i in range(self.n) for l in range(self.L)}
+        return self
 
     def predict_utility(self, X):
         """Return Decision Function of the MIP for X. - To be completed.
@@ -200,9 +315,19 @@ class TwoClustersMIP(BaseModel):
         X: np.ndarray
             (n_samples, n_features) list of features of elements
         """
-        # To be completed
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        return
+        def get_last_index(x, i):
+            segments = np.linspace(mins[i], maxs[i], self.L + 1)
+            return np.argmax(x < segments) - 1
+        
+        maxs = np.max(np.concatenate([X], axis=0), axis=0)
+        mins = np.min(np.concatenate([X], axis=0), axis=0)
+        utilities = np.zeros((X.shape[0], self.K))
+        for k in range(self.K):
+            for i in range(self.n):
+                for j in range(X.shape[0]):
+                    utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)]
+        return utilities
 
 
 class HeuristicModel(BaseModel):
