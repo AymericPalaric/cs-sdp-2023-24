@@ -250,48 +250,70 @@ class TwoClustersMIP(BaseModel):
                 for j in range(self.P)
         }
 
-        # self.max_comp = {
-        #     (k, j): self.model.addVar(
-        #         vtype=GRB.CONTINUOUS, lb=-GRB.INFINITY, name="max_comp_{}_{}".format(k, j))
-        #         for k in range(self.K)
-        #         for j in range(self.P)
-        # }
-        self.sup = {
+        self.delta1 = {
             (k, j): self.model.addVar(
-                vtype=GRB.BINARY, name="sup_{}_{}".format(k, j))
+                vtype=GRB.BINARY, name="delta1_{}_{}".format(k, j))
                 for k in range(self.K)
                 for j in range(self.P)
         }
 
-        # Constraints
-        ## Preference matching : $\forall j \in \{1,\dots,P\}, \exists k \in \{1,\dots,K\}, u_k(X[j]) - u_k(Y[j]) - \epsilon \geq 0$
-        # self.model.addConstrs(
-        #     (quicksum((
-        #         self.max_comp[k, j] for k in range(self.K))) >= 0 for j in range(self.P)
-        #         )
-        # )
-        
-        # self.model.addConstrs(
-        #     (self.max_comp[k,j] == max_(0, quicksum((self.U[k, i, get_last_index(X[j, i], i)] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i)))/(get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))*(self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)]) for i in range(self.n))) - self.sigmaxp[k, j] + self.sigmaxm[k, j] -\
-        #                    quicksum((self.U[k, i, get_last_index(Y[j, i], i)] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i)))/(get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))*(self.U[k, i, get_last_index(Y[j, i], i)+1] - self.U[k, i, get_last_index(Y[j, i], i)]) for i in range(self.n))) + self.sigmayp[k, j] - self.sigmaym[k, j] - self.epsilon) for j in range(self.P) for k in range(self.K)))
-        
-        self.model.addConstrs(
-            (quicksum((self.sup[k,j] for k in range(self.K))) >= 1 for j in range(self.P))
-        )
+        self.delta2 = {
+            (k, j): self.model.addVar(
+                vtype=GRB.BINARY, name="delta2_{}_{}".format(k, j))
+                for k in range(self.K)
+                for j in range(self.P)
+        }
 
-        # define sup[k,j] as being an indicator variable for the preference of X over Y : sup[k,j] = 1 if utilitary function of X is greater than utilitary function of Y, 0 otherwise
+
+        # Constraints
+        ## align preferences with delta variables
+        M = 2
         self.model.addConstrs(
-            (self.sup[k,j] == 1 - quicksum((self.U[k, i, get_last_index(X[j, i], i)] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i)))/(get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))*(self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)]) for i in range(self.n))) + self.sigmaxp[k, j] - self.sigmaxm[k, j] -\
-                           quicksum((self.U[k, i, get_last_index(Y[j, i], i)] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i)))/(get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))*(self.U[k, i, get_last_index(Y[j, i], i)+1] - self.U[k, i, get_last_index(Y[j, i], i)]) for i in range(self.n))) + self.sigmayp[k, j] - self.sigmaym[k, j] - self.epsilon) for j in range(self.P) for k in range(self.K))
+            (quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
+              quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + ((Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(k, j)] - self.sigmaym[(k, j)] - self.sigmaxp[(k, j)] + self.sigmayp[(k, j)] - self.epsilon >= M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K))
+        )
+        self.model.addConstrs(
+            (quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
+              quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + ((Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(k, j)] - self.sigmaym[(k, j)] - self.sigmaxp[(k, j)] + self.sigmayp[(k, j)] - self.epsilon <= M*self.delta1[(k,j)] for j in range(self.P) for k in range(self.K))
+        )
+        ## there exists a k so that delta2[k,j] = 1
+        self.model.addConstrs(
+            (quicksum(self.delta2[(k, j)] for k in range(self.K)) >= 1 for j in range(self.P))
+        )
+        
+        
+
+
+        ## Preference matching : $\forall j \in \{1,\dots,P\}, \exists k \in \{1,\dots,K\}, u_k(X[j]) - u_k(Y[j]) - \epsilon \geq 0$
+        
+        self.model.addConstrs(
+            (self.delta1[k,j] - self.delta2[k,j] == 0 for j in range(self.P) for k in range(self.K))
+        )
 
 
         ## Monothonicity : 
+        # self.model.addConstrs(
+        #     (quicksum((self.U[k, i, l] - self.U[k, i, l+1]) for l in range(self.L-1)) >= 0 for k in range(self.K) for i in range(self.n)))
         self.model.addConstrs(
-            (quicksum((self.U[k, i, l] - self.U[k, i, l+1]) for l in range(self.L-1)) >= self.epsilon for k in range(self.K) for i in range(self.n)))
+            (self.U[(k, i, l+1)] - self.U[(k, i, l)]>=1e-6 for k in range(self.K) for i in range(self.n) for l in range(self.L)))
+        ### total score is one, start of each score is 0
+        self.model.addConstrs(
+            (self.U[(k, i, 0)] == 0 for k in range(self.K) for i in range(self.n)))
+        self.model.addConstrs(
+            (quicksum(self.U[(k, i, self.L)] for i in range(self.n)) == 1 for k in range(self.K)))
         
         # Objective
         self.model.setObjective(quicksum((self.sigmaxp[k, j] + self.sigmaxm[k, j] + self.sigmayp[k, j] + self.sigmaym[k, j]) for k in range(self.K) for j in range(self.P)), GRB.MINIMIZE)
+        # self.model.setObjective(quicksum((self.sigmaxp[k, j] + self.sigmaxm[k, j] + self.sigmayp[k, j] + self.sigmaym[k, j]) for k in range(self.K) for j in range(self.P))+ quicksum(M*self.delta1[(k,j)] for k in range(self.K) for j in range(self.P)) + quicksum(M*quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
+        #       quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(k, j)] - self.sigmaym[(k, j)] - self.sigmaxp[(k, j)] + self.sigmayp[(k, j)] - self.epsilon for k in range(self.K) for j in range(self.P)) , GRB.MINIMIZE)
 
+
+        def plot_utilitary_fns(U):
+            import matplotlib.pyplot as plt
+            for k in range(self.K):
+                for i in range(self.n):
+                    plt.plot([get_bp(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
+                plt.show()
         # Solve
         self.model.params.outputflag = 0  # mode muet
         self.model.update()
@@ -304,7 +326,14 @@ class TwoClustersMIP(BaseModel):
             raise Exception("Unbounded")
         else:
             print("\n le PROGRAMME A UNE SOLUTION!!!")
-            self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K+1) for i in range(self.n) for l in range(self.L)}
+            # print the value of objective function
+            print("objective function value: ", self.model.objVal)
+            self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
+            self.sigmaxp = {(k, j): self.sigmaxp[k, j].x for k in range(self.K) for j in range(self.P)}
+            self.sigmayp = {(k, j): self.sigmayp[k, j].x for k in range(self.K) for j in range(self.P)}
+            self.sigmaxm = {(k, j): self.sigmaxm[k, j].x for k in range(self.K) for j in range(self.P)}
+            self.sigmaym = {(k, j): self.sigmaym[k, j].x for k in range(self.K) for j in range(self.P)}
+            plot_utilitary_fns(self.U)
         return self
 
     def predict_utility(self, X):
@@ -318,7 +347,13 @@ class TwoClustersMIP(BaseModel):
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
         def get_last_index(x, i):
             segments = np.linspace(mins[i], maxs[i], self.L + 1)
-            return np.argmax(x < segments) - 1
+            last_index = np.argmax(x < segments) - 1
+            if last_index == -1:
+                if x == mins[i]:
+                    return 0
+                else:
+                    return len(segments) - 2
+            return last_index
         
         maxs = np.max(np.concatenate([X], axis=0), axis=0)
         mins = np.min(np.concatenate([X], axis=0), axis=0)
@@ -327,6 +362,10 @@ class TwoClustersMIP(BaseModel):
             for i in range(self.n):
                 for j in range(X.shape[0]):
                     utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)]
+        # add sigmas
+        # for k in range(self.K):
+        #     for j in range(X.shape[0]):
+        #         utilities[j, k] += self.sigmaxp[k, j] + self.sigmaxm[k, j] - self.sigmayp[k, j] - self.sigmaym[k, j]
         return utilities
 
 
