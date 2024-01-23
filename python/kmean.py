@@ -3,15 +3,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.metrics as sm 
 from sklearn.cluster import KMeans
+from data import Dataloader
+import os
 
-# Load X et Y dataset
-X=np.loadtxt('../data/dataset_10/X.npy')
-Y=np.loadtxt('../data/dataset_10/Y.npy')
+X = np.loadtxt("../data/dataset_4/X.npy",delimiter=';',dtype='float',header=True)
+Y = np.loadtxt("../data/dataset_4/Y.npy",delimiter=';',dtype='float',header=True)
 
-# Create KMeans model
-model = KMeans(n_clusters=3)
-model.fit(X)
-
+print(X)
 
 
 
