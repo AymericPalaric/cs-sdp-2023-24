@@ -3,6 +3,8 @@ from abc import abstractmethod
 
 import numpy as np
 from gurobipy import Model, GRB, quicksum, max_
+from sklearn.cluster import KMeans
+from time import time
 
 
 class BaseModel(object):
@@ -404,12 +406,6 @@ class TwoClustersMIP(BaseModel):
             # print(self.sigmaym)
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-            sampleX = np.expand_dims(X[0], axis=0)
-            sampleY = np.expand_dims(Y[0], axis=0)
-            utilityX = self.predict_utility(sampleX)
-            utilityY = self.predict_utility(sampleY)
-            print("utility X: ", utilityX)
-            print("utility Y: ", utilityY)
 
             
             plot_utilitary_fns(self.U)
@@ -452,20 +448,30 @@ class TwoClustersMIP(BaseModel):
 
 
 class HeuristicModel(BaseModel):
-    """Skeleton of MIP you have to write as the first exercise.
-    You have to encapsulate your code within this class that will be called for evaluation.
+    """Skeleton of Heuristic you have to write as the second exercise.
+    Heuristic is a model that does not use MIP but rather a heuristic to find the best cluster for each element.
+    Heuristic : Genetic algorithm :
+        - Individual : utilitary function for each cluster
+        - Fitness : percentage of pairs explained by at least a cluster
+        - Selection : tournament selection
+        - Crossover : one point crossover
+        - Mutation : random mutation
     """
 
-    def __init__(self):
+    def __init__(self, n_pieces, n_clusters, epsilon):
         """Initialization of the Heuristic Model.
         """
         self.seed = 123
-        self.models = self.instantiate()
+        self.L = n_pieces
+        self.K = n_clusters
+        self.epsilon = epsilon
+        # self.models = self.instantiate()
 
     def instantiate(self):
-        """Instantiation of the MIP Variables"""
-        # To be completed
-        return
+        """Instantiation of the MIP Variables - To be completed."""
+        np.random.seed(self.seed)
+        models = [Model(f"HeuristicModelCluster{k}") for k in range(self.K)]
+        return models
 
     def fit(self, X, Y):
         """Estimation of the parameters - To be completed.
@@ -477,8 +483,176 @@ class HeuristicModel(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
-        # To be completed
-        return
+
+        np.random.seed(self.seed)
+        self.n = X.shape[1]
+        self.P = X.shape[0]
+        maxs = np.ones(self.n)
+        mins = np.zeros(self.n)
+
+        def get_last_index(x, i):
+            return int(np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i])))
+        
+        def get_bp(i, l):
+            return mins[i] + l * (maxs[i] - mins[i]) / self.L
+        
+        def get_utility(x, U, k, i, l):
+            return U[k, i, l] + ((x - get_bp(i, l)) / (get_bp(i, l+1) - get_bp(i, l))) * (U[k, i, l+1] - U[k, i, l])
+        
+        def score_U(U, X, Y):
+            Ux = np.zeros((self.P, self.K))
+            Uy = np.zeros((self.P, self.K))
+            for j in range(self.P):
+                x, y = X[j], Y[j]
+                for k in range(self.K):
+                    for i in range(self.n):
+                        lx = get_last_index(x[i], i)
+                        Ux[j, k] += get_utility(x[i], U, k, i, lx)
+                        ly = get_last_index(y[i], i)
+                        Uy[j, k] += get_utility(y[i], U, k, i, ly)
+            return np.sum(np.sum(Ux - Uy > 0, axis=1) > 0) / len(Ux)
+        
+        def constrain_U(U):
+            """
+            Modify U so that it respects the constraints.
+            U (K, n, L+1) should be :
+                - monotonous, meaning that U[k, i, l] <= U[k, i, l+1] for all k, i, l
+                - sum to 1, meaning that sum(U[k, :, L]) = 1 for all k, i
+                - start at 0, meaning that U[k, i, 0] = 0 for all k, i
+            """
+            for k in range(self.K):
+                for i in range(self.n):
+                    U[k, i, :] = np.sort(U[k, i, :])
+            for k in range(self.K):
+                # all last values accross each feature must sum to 1
+                U[k, :, :] = U[k, :, :] / np.sum(U[k, :, -1])
+            return U
+        
+        def verify_U(U):
+            """
+            Verify that U respects the constraints.
+            """
+            for k in range(self.K):
+                for i in range(self.n):
+                    if not np.all(U[k, i, :] == np.sort(U[k, i, :])):
+                        return False, f"not sorted: {U[k, i, :]}"
+                    if not np.allclose(U[k, i, 0], 0):
+                        return False, f"not start at 0: {U[k, i, 0]}"
+                # if the sum of the last values is not between 0.99 and 1.01, we have a problem
+                if not np.allclose(np.sum(U[k, :, -1]), 1):
+                    return False, f"not sum to 1: {np.sum(U[k, :, -1])}"
+            return True, ""
+        
+        def crossover(parent1, parent2):
+            """
+            We mix a random number of feature utilities from parent1 and the rest from parent2
+            """
+            child1 = np.copy(parent1)
+            child2 = np.copy(parent2)
+            for k in range(self.K):
+                n_i1 = np.random.randint(0, self.n)
+                n_i2 = np.random.randint(0, self.n)
+                i1s = np.unique(np.random.randint(0, self.n, n_i1))
+                i2s = np.unique(np.random.randint(0, self.n, n_i2))
+                for i in i1s:
+                    child1[k, i, :] = parent2[k, i, :]
+                for i in i2s:
+                    child2[k, i, :] = parent1[k, i, :]
+            child1, child2 = constrain_U(child1), constrain_U(child2)
+            return child1, child2
+        
+        def mutation(child):
+            """
+            We change the value of a random number of feature utilities
+            """
+            for k in range(self.K):
+                n_i = np.random.randint(0, self.n)
+                i_s = np.unique(np.random.randint(0, self.n, n_i))
+                for i in i_s:
+                    n_l = np.random.randint(0, self.L//2)
+                    l_s = np.unique(np.random.randint(1, self.L+1, n_l))
+                    for l in l_s:
+                        child[k, i, l] = np.random.rand()
+                # child[k, :, :] = np.sort(child[k, :, :], axis=-1)
+                # # all last values accross each feature must sum to 1
+                # child[k, :, -1] = 1 - np.sum(child[k, :, :-1], axis=1)
+            child = constrain_U(child)
+            return child
+
+
+        pop_size = 50
+        n_epochs = 500
+
+        # Init
+        self.Us = np.zeros((pop_size, self.K, self.n, self.L+1))
+        self.Us[:, :, :, -1] = np.random.rand(pop_size, self.K, self.n)
+        self.Us[:, :, :, -1] = self.Us[:, :, :, -1]/np.sum(self.Us[:, :, :, -1], axis=2)[:, :, np.newaxis]
+        for l in range(1, self.L):
+            # all the other values are random, comprised between 0 and the last value (self.Us[:, :, :, -1])
+            self.Us[:, :, :, l] = np.random.rand(pop_size, self.K, self.n) * self.Us[:, :, :, -1]
+        self.Us[:, :, :, :] = np.sort(self.Us[:, :, :, :], axis=-1)
+        
+        # print(self.Us)
+        best_U = np.ones((self.K, self.n, self.L+1))
+        best_score = 0
+
+        
+
+        for e in range(n_epochs):
+            start_t = time()
+            new_Us = np.zeros((pop_size, self.K, self.n, self.L+1))
+            scores = np.array([score_U(self.Us[i], X, Y) for i in range(pop_size)])
+            # Ranking
+            ranking = np.argsort(scores)
+            print(f"Best score at iteration {e} : {scores[ranking[-1]]}")
+            if scores[ranking[-1]] > best_score:
+                best_score = scores[ranking[-1]]
+                best_U = self.Us[ranking[-1]]
+
+            # Selection
+            parents = ranking[int(pop_size/2):].tolist()
+            new_Us[int(pop_size/2):] = self.Us[ranking[int(pop_size/2):]]
+            # print(parents)
+
+            # Crossover
+            for i in range(0, int(pop_size/2), 2):
+                parent1 = np.random.choice(parents)
+                parent2 = np.random.choice(parents)
+                child1, child2 = crossover(self.Us[parent1], self.Us[parent2])
+                new_Us[i] = child1
+                new_Us[i+1] = child2
+            
+            
+            
+            # Mutation
+            n_mutations = np.random.randint(0, pop_size)
+            population = np.arange(pop_size).tolist()
+            for i in range(n_mutations):
+                mutated = population.pop(np.random.randint(0, len(population)))
+                new_Us[mutated] = mutation(new_Us[mutated])
+
+
+            for U in new_Us:
+                isok, msg = verify_U(U)
+                assert isok, msg
+            self.Us = new_Us
+            print(f"\tEpoch {e} took {round(time() - start_t)} seconds")
+            print(f"\tEstimated time remaining : {round((n_epochs - e) * (time() - start_t))} seconds")
+        
+        
+        scores = np.array([score_U(self.Us[i], X, Y) for i in range(pop_size)])
+        # Ranking
+        ranking = np.argsort(scores)
+
+        if scores[ranking[-1]] > best_score:
+            best_score = scores[ranking[-1]]
+            best_U = self.Us[ranking[-1]]
+        
+        self.U = best_U
+        np.save("best_U.npy", self.U)
+        print(f"Best score : {best_score}")
+
+        return self
 
     def predict_utility(self, X):
         """Return Decision Function of the MIP for X. - To be completed.
@@ -488,6 +662,50 @@ class HeuristicModel(BaseModel):
         X: np.ndarray
             (n_samples, n_features) list of features of elements
         """
-        # To be completed
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        return
+        maxs = np.ones(self.n)
+        mins = np.zeros(self.n)
+
+        def get_bp(i, l):
+            segments = np.linspace(mins[i], maxs[i], self.L + 1)
+            if l >= len(segments):
+                return segments[-1]
+            return segments[l]
+
+        def get_last_index(x, i):
+            segments = np.linspace(mins[i], maxs[i], self.L + 1)
+            last_index = np.argmax(x < segments) - 1
+            return last_index
+        
+        utilities = np.zeros((X.shape[0], self.K))
+        for k in range(self.K):
+            for j in range(X.shape[0]):
+                for i in range(self.n):
+                    l = get_last_index(X[j, i], i)
+                    utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
+        # add sigmas
+        # for k in range(self.K):
+        #     for j in range(X.shape[0]):
+        #         utilities[j, k] += self.sigmaxp[k, j] + self.sigmaxm[k, j] - self.sigmayp[k, j] - self.sigmaym[k, j]
+        return utilities
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.path.append("../python/")
+
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from data import Dataloader
+    from models import RandomExampleModel
+    import metrics
+    # Loading the data
+    data_loader = Dataloader("../data/dataset_4") # Specify path to the dataset you want to load
+    X, Y = data_loader.load()
+    
+    parameters = {"n_pieces": 5,
+              "n_clusters" : 2,
+              "epsilon" : 0.00001} # Can be completed
+    model = HeuristicModel(**parameters)
+    model.fit(X, Y)
