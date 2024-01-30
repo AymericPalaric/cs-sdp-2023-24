@@ -197,8 +197,8 @@ class TwoClustersMIP(BaseModel):
         """
         self.n = X.shape[1]
         self.P = X.shape[0]
-        maxs = np.ones(self.n)
-        mins = np.zeros(self.n)
+        maxs = np.ones(self.n)*1.01
+        mins = np.ones(self.n)*-0.01
 
         def get_last_index(x, i):
             return np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i]))
@@ -250,13 +250,6 @@ class TwoClustersMIP(BaseModel):
                 for j in range(self.P)
         } # 1 if X is preferred to Y for cluster k, 0 otherwise
 
-        # self.delta2 = {
-        #     (k, j): self.model.addVar(
-        #         vtype=GRB.BINARY, name="delta2_{}_{}".format(k, j))
-        #         for k in range(self.K)
-        #         for j in range(self.P)
-        # }
-
 
         # Constraints
         ## align preferences with delta variables
@@ -291,73 +284,19 @@ class TwoClustersMIP(BaseModel):
             for j in range(self.P):
                 uk_yj[k, j] = quicksum(uik_yij[k, i, j] for i in range(self.n))
         
-
-        #######
-        # self.model.addConstrs(
-        #     (quicksum((self.U[(k, i, get_last_index(X[j, i], i))] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n))) -
-        #       quicksum((self.U[(k, i, get_last_index(Y[j, i], i))] + ((Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n))) + self.sigmaxm[(j)] - self.sigmaym[(j)] - self.sigmaxp[(j)] + self.sigmayp[(j)] - self.epsilon >= M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K))
-        # )
-        #######
         self.model.addConstrs(
             (uk_xj[k, j] - self.sigmaxp[j] + self.sigmaxm[j] - uk_yj[k, j] + self.sigmayp[j] - self.sigmaym[j] - self.epsilon >= -M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K))
         )
 
-        # self.model.addConstrs(
-        #     (quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
-        #       quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + ((Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(j)] - self.sigmaym[(j)] - self.sigmaxp[(j)] + self.sigmayp[(j)] >= self.epsilon for j in range(self.P) for k in range(self.K))
-        # )
-        # Ajoutez d'abord les variables binaires auxiliaires
-        # z1 = {}
-        # for k in range(self.K):
-        #     z1[k] = self.model.addVar(vtype=GRB.BINARY)
-
-        # Ajoutez ensuite les contraintes
-        # for j in range(self.P):
-        #     for k in range(self.K):
-        #         self.model.addConstr(ux_minus_uy_kj[k][j] - M * (1 - self.delta1[(k, j)]) <= M*z1[k])
-        #         self.model.addConstr(ux_minus_uy_kj[k][j] - M * (1 - self.delta1[(k, j)]) >= (1 - z1[k])*M)
-        #     self.model.addConstr(quicksum(z1[k] for k in range(self.K)) >= 1)
-
-        #######
-        # self.model.addConstrs(
-        #     (quicksum((self.U[(k, i, get_last_index(X[j, i], i))] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n))) -
-        #       quicksum((self.U[(k, i, get_last_index(Y[j, i], i))] + ((Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i)))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n))) + self.sigmaxm[(j)] - self.sigmaym[(j)] - self.sigmaxp[(j)] + self.sigmayp[(j)] - self.epsilon <= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K))
-        # )
-        #######
         self.model.addConstrs(
             (uk_xj[k, j] - self.sigmaxp[j] + self.sigmaxm[j] - uk_yj[k, j] + self.sigmayp[j] - self.sigmaym[j] - self.epsilon <= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K))
         )
-        # z2 = {}
-        # for k in range(self.K):
-        #     z2[k] = self.model.addVar(vtype=GRB.BINARY)
-
-        # Ajoutez ensuite les contraintes
-        # for j in range(self.P):
-        #     for k in range(self.K):
-        #         self.model.addConstr(-ux_minus_uy_kj[k][j] + M*self.delta1[(k,j)] <= M*z1[k])
-        #         self.model.addConstr(-ux_minus_uy_kj[k][j] + M*self.delta1[(k,j)] >= (1 - z1[k])*M)
-            # self.model.addConstr(quicksum(z1[k] for k in range(self.K)) >= 1)
 
         ## there exists a k so that delta2[k,j] = 1
         for j in range(self.P):
             self.model.addConstr(
                 quicksum(self.delta1[(k, j)] for k in range(self.K)) >= 1
             )
-            
-        # for k in range(self.K):
-        #     self.model.addConstr(
-        #         quicksum(self.delta1[(k, j)] for j in range(self.P)) <= self.P - self.epsilon
-        #     )
-            # self.model.addConstr(
-            #     quicksum(1 - self.delta1[(k, j)] for k in range(self.K)) >= 1
-            # )
-        
-        ## Preference matching : $\forall j \in \{1,\dots,P\}, \exists k \in \{1,\dots,K\}, u_k(X[j]) - u_k(Y[j]) - \epsilon \geq 0$
-        
-        # self.model.addConstrs(
-        #     (self.delta1[k,j] - self.delta2[k,j] == 0 for j in range(self.P) for k in range(self.K))
-        # )
-
 
         ## Monothonicity : 
         # self.model.addConstrs(
@@ -420,19 +359,15 @@ class TwoClustersMIP(BaseModel):
             (n_samples, n_features) list of features of elements
         """
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        maxs = np.ones(self.n)
-        mins = np.zeros(self.n)
-
-        def get_bp(i, l):
-            segments = np.linspace(mins[i], maxs[i], self.L + 1)
-            if l >= len(segments):
-                return segments[-1]
-            return segments[l]
+        maxs = np.ones(self.n)*1.01
+        mins = np.ones(self.n)*-0.01
 
         def get_last_index(x, i):
-            segments = np.linspace(mins[i], maxs[i], self.L + 1)
-            last_index = np.argmax(x < segments) - 1
-            return last_index
+            return int(np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i])))
+
+        
+        def get_bp(i, l):
+            return mins[i] + l * (maxs[i] - mins[i]) / self.L
         
         utilities = np.zeros((X.shape[0], self.K))
         for k in range(self.K):
@@ -440,10 +375,7 @@ class TwoClustersMIP(BaseModel):
                 for i in range(self.n):
                     l = get_last_index(X[j, i], i)
                     utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
-        # add sigmas
-        # for k in range(self.K):
-        #     for j in range(X.shape[0]):
-        #         utilities[j, k] += self.sigmaxp[k, j] + self.sigmaxm[k, j] - self.sigmayp[k, j] - self.sigmaym[k, j]
+
         return utilities
 
 
