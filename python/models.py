@@ -163,7 +163,7 @@ class TwoClustersMIP(BaseModel):
     You have to encapsulate your code within this class that will be called for evaluation.
     """
 
-    def __init__(self, n_pieces, n_clusters, epsilon=1e-5):
+    def __init__(self, n_pieces, n_clusters, epsilon=1e-4):
         """Initialization of the MIP Variables
 
         Parameters
@@ -372,7 +372,7 @@ class HeuristicModel(BaseModel):
     - Predicts the utility of each element using the UTA MIP model of the cluster it belongs to
     """
 
-    def __init__(self, n_pieces, n_clusters, epsilon=1e-5):
+    def __init__(self, n_pieces, n_clusters, epsilon=1e-4):
         """Initialization of the MIP Variables
 
         Parameters
