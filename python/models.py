@@ -253,7 +253,7 @@ class TwoClustersMIP(BaseModel):
 
         # Constraints
         ## align preferences with delta variables
-        M = 2
+        M = 100
         uik_xij = {}
         for k in range(self.K):
             for i in range(self.n):
@@ -416,8 +416,8 @@ class HeuristicModel(BaseModel):
         np.random.seed(self.seed)
         self.n = X.shape[1]
         self.P = X.shape[0]
-        maxs = np.ones(self.n)*1.01
-        mins = np.ones(self.n)*-0.01
+        maxs = np.ones(self.n)
+        mins = np.zeros(self.n)
 
         def get_last_index(x, i):
             return int(np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i])))
@@ -508,17 +508,9 @@ class HeuristicModel(BaseModel):
             child = constrain_U(child)
             return child
 
-        def calculate_Ux(U, x):
-            Ux = np.zeros((self.K))
-            for k in range(self.K):
-                for i in range(self.n):
-                    lx = get_last_index(x[i], i)
-                    Ux[k] += U[k, i, lx] + ((x[i] - get_bp(i, lx)) / (get_bp(i, lx+1) - get_bp(i, lx))) * (U[k, i, lx+1] - U[k, i, lx])
-            return Ux
 
-
-        pop_size = 10
-        n_epochs = 50
+        pop_size = 50
+        n_epochs = 500
 
         # Init
         self.Us = np.zeros((pop_size, self.K, self.n, self.L+1))
@@ -545,15 +537,6 @@ class HeuristicModel(BaseModel):
             if scores[ranking[-1]] > best_score:
                 best_score = scores[ranking[-1]]
                 best_U = self.Us[ranking[-1]]
-            # separate the population in pseudo clusters
-            # X_us = np.zeros((self.P, self.K))
-            # Y_us = np.zeros((self.P, self.K))
-            # for j in range(self.P):
-            #     x, y = X[j], Y[j]
-            #     X_us[j, :] = calculate_Ux(best_U, x)
-            #     Y_us[j, :] = calculate_Ux(best_U, y)
-            # X_clusts = np.argmax(X_us, axis=1)
-            # Y_clusts = np.argmax(Y_us, axis=1)
 
             # Selection
             parents = ranking[int(pop_size/2):].tolist()
