@@ -220,26 +220,22 @@ class TwoClustersMIP(BaseModel):
         self.sigmaxp = {
             (j): self.model.addVar(
                 vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(j), ub=1)
-                # for k in range(self.K)
                 for j in range(self.P)
         }
         self.sigmayp = {
             (j): self.model.addVar(
                 vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(j), ub=1)
-                # for k in range(self.K)
                 for j in range(self.P)
         }
 
         self.sigmaxm = {
             (j): self.model.addVar(
                 vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(j), ub=1)
-                # for k in range(self.K)
                 for j in range(self.P)
         }
         self.sigmaym = {
             (j): self.model.addVar(
                 vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(j), ub=1)
-                # for k in range(self.K)
                 for j in range(self.P)
         }
 
@@ -253,13 +249,12 @@ class TwoClustersMIP(BaseModel):
 
         # Constraints
         ## align preferences with delta variables
-        M = 100
+        M = 3
         uik_xij = {}
         for k in range(self.K):
             for i in range(self.n):
                 for j in range(self.P):
                     l = get_last_index(X[j, i], i)
-                    # print("x", X[j, i], "l", l)
                     bp = get_bp(i, l)
                     bp1 = get_bp(i, l+1)
                     uik_xij[k, i, j] = self.U[(k, i, l)] + ((X[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
@@ -269,7 +264,6 @@ class TwoClustersMIP(BaseModel):
             for i in range(self.n):
                 for j in range(self.P):
                     l = get_last_index(Y[j, i], i)
-                    # print("x", X[j, i], "l", l)
                     bp = get_bp(i, l)
                     bp1 = get_bp(i, l+1)
                     uik_yij[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
@@ -296,8 +290,6 @@ class TwoClustersMIP(BaseModel):
             )
 
         ## Monothonicity : 
-        # self.model.addConstrs(
-        #     (quicksum((self.U[k, i, l] - self.U[k, i, l+1]) for l in range(self.L-1)) >= 0 for k in range(self.K) for i in range(self.n)))
         self.model.addConstrs(
             (self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
         ### total score is one, start of each score is 0
@@ -308,8 +300,6 @@ class TwoClustersMIP(BaseModel):
         
         # Objective
         self.model.setObjective(quicksum(self.sigmaxp[j] + self.sigmaxm[j] + self.sigmayp[j] + self.sigmaym[j] for j in range(self.P)), GRB.MINIMIZE)
-        # self.model.setObjective(quicksum((self.sigmaxp[k, j] + self.sigmaxm[k, j] + self.sigmayp[k, j] + self.sigmaym[k, j]) for k in range(self.K) for j in range(self.P))+ quicksum(M*self.delta1[(k,j)] for k in range(self.K) for j in range(self.P)) + quicksum(M*quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
-        #       quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(k, j)] - self.sigmaym[(k, j)] - self.sigmaxp[(k, j)] + self.sigmayp[(k, j)] - self.epsilon for k in range(self.K) for j in range(self.P)) , GRB.MINIMIZE)
 
 
         def plot_utilitary_fns(U):
@@ -334,12 +324,6 @@ class TwoClustersMIP(BaseModel):
             # print the value of objective function
             print("objective function value: ", self.model.objVal)
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
-            # self.sigmaxp = {(j): self.sigmaxp[(j)].x for j in range(self.P)}
-            # self.sigmayp = {(j): self.sigmayp[(j)].x for j in range(self.P)}
-            # self.sigmaxm = {(j): self.sigmaxm[(j)].x for j in range(self.P)}
-            # self.sigmaym = {(j): self.sigmaym[(j)].x for j in range(self.P)}
-            # print(self.sigmaxm)
-            # print(self.sigmaym)
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
 
@@ -374,200 +358,13 @@ class TwoClustersMIP(BaseModel):
                     utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
 
         return utilities
-    
-
-class UTAMIP(BaseModel):
-    """Skeleton of MIP you have to write as the first exercise.
-    You have to encapsulate your code within this class that will be called for evaluation.
-    """
-
-    def __init__(self, n_pieces, epsilon):
-        """Initialization of the MIP Variables
-
-        Parameters
-        ----------
-        n_pieces: int
-            Number of pieces for the utility function of each feature.
-        n°clusters: int
-            Number of clusters to implement in the MIP.
-        """
-        self.seed = 123
-        self.L = n_pieces
-        self.epsilon = epsilon
-        self.model = self.instantiate()
-
-    def instantiate(self):
-        """Instantiation of the MIP Variables - To be completed."""
-        np.random.seed(self.seed)
-        model = Model("UTAMIP")
-        return model
-
-    def fit(self, X, Y, plot=True):
-        """Estimation of the parameters - To be completed.
-
-        Parameters
-        ----------
-        X: np.ndarray
-            (n_samples, n_features) features of elements preferred to Y elements
-        Y: np.ndarray
-            (n_samples, n_features) features of unchosen elements
-        """
-        self.n = X.shape[1]
-        self.P = X.shape[0]
-        maxs = np.ones(self.n)*1.01
-        mins = np.ones(self.n)*-0.01
-
-        def get_last_index(x, i):
-            return np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i]))
-
-        
-        def get_bp(i, l):
-            return mins[i] + l * (maxs[i] - mins[i]) / self.L
-
-        # Vars
-        ## Utilitary functions
-        self.U = {
-            (i, l): self.model.addVar(
-                vtype=GRB.CONTINUOUS, lb=0, name="u_{}_{}".format(i, l), ub=1)
-                for i in range(self.n)
-                for l in range(self.L+1)
-        }
-        ## over-est and under-est
-        self.sigmaxp = {
-            (j): self.model.addVar(
-                vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(j), ub=1)
-                # for k in range(self.K)
-                for j in range(self.P)
-        }
-        self.sigmayp = {
-            (j): self.model.addVar(
-                vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(j), ub=1)
-                # for k in range(self.K)
-                for j in range(self.P)
-        }
-
-        self.sigmaxm = {
-            (j): self.model.addVar(
-                vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(j), ub=1)
-                # for k in range(self.K)
-                for j in range(self.P)
-        }
-        self.sigmaym = {
-            (j): self.model.addVar(
-                vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(j), ub=1)
-                # for k in range(self.K)
-                for j in range(self.P)
-        }
-
-
-
-        # Constraints
-        ## align preferences with delta variables
-        M = 100
-        uik_xij = {}
-        for i in range(self.n):
-            for j in range(self.P):
-                l = get_last_index(X[j, i], i)
-                # print("x", X[j, i], "l", l)
-                bp = get_bp(i, l)
-                bp1 = get_bp(i, l+1)
-                uik_xij[i, j] = self.U[(i, l)] + ((X[j, i] - bp) / (bp1 - bp)) * (self.U[(i, l+1)] - self.U[(i, l)])
-        
-        uik_yij = {}
-        for i in range(self.n):
-            for j in range(self.P):
-                l = get_last_index(Y[j, i], i)
-                # print("x", X[j, i], "l", l)
-                bp = get_bp(i, l)
-                bp1 = get_bp(i, l+1)
-                uik_yij[i, j] = self.U[(i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(i, l+1)] - self.U[(i, l)])
-        
-        uk_xj = {}
-        for j in range(self.P):
-            uk_xj[j] = quicksum(uik_xij[i, j] for i in range(self.n))
-        
-        uk_yj = {}
-        for j in range(self.P):
-            uk_yj[j] = quicksum(uik_yij[i, j] for i in range(self.n))
-        
-        self.model.addConstrs(
-            (uk_xj[j] - self.sigmaxp[j] + self.sigmaxm[j] - uk_yj[j] + self.sigmayp[j] - self.sigmaym[j] >= self.epsilon for j in range(self.P))
-        )
-
-        ## Monothonicity : 
-        # self.model.addConstrs(
-        #     (quicksum((self.U[k, i, l] - self.U[k, i, l+1]) for l in range(self.L-1)) >= 0 for k in range(self.K) for i in range(self.n)))
-        self.model.addConstrs(
-            (self.U[(i, l+1)] - self.U[(i, l)]>=self.epsilon for i in range(self.n) for l in range(self.L)))
-        ### total score is one, start of each score is 0
-        self.model.addConstrs(
-            (self.U[(i, 0)] == 0 for i in range(self.n)))
-        self.model.addConstr(
-            quicksum(self.U[(i, self.L)] for i in range(self.n)) == 1)
-        
-        # Objective
-        self.model.setObjective(quicksum(self.sigmaxp[j] + self.sigmaxm[j] + self.sigmayp[j] + self.sigmaym[j] for j in range(self.P)), GRB.MINIMIZE)
-        # self.model.setObjective(quicksum((self.sigmaxp[k, j] + self.sigmaxm[k, j] + self.sigmayp[k, j] + self.sigmaym[k, j]) for k in range(self.K) for j in range(self.P))+ quicksum(M*self.delta1[(k,j)] for k in range(self.K) for j in range(self.P)) + quicksum(M*quicksum(self.U[(k, i, get_last_index(X[j, i], i))] + (X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i))) * (self.U[(k, i, get_last_index(X[j, i], i)+1)] - self.U[(k, i, get_last_index(X[j, i], i))]) for i in range(self.n)) -
-        #       quicksum(self.U[(k, i, get_last_index(Y[j, i], i))] + (Y[j, i] - get_bp(i, get_last_index(Y[j, i], i))) / (get_bp(i, get_last_index(Y[j, i], i)+1) - get_bp(i, get_last_index(Y[j, i], i))) * (self.U[(k, i, get_last_index(Y[j, i], i)+1)] - self.U[(k, i, get_last_index(Y[j, i], i))]) for i in range(self.n)) + self.sigmaxm[(k, j)] - self.sigmaym[(k, j)] - self.sigmaxp[(k, j)] + self.sigmayp[(k, j)] - self.epsilon for k in range(self.K) for j in range(self.P)) , GRB.MINIMIZE)
-
-
-        # Solve
-        self.model.params.outputflag = 0  # mode muet
-        self.model.update()
-        self.model.optimize()
-        if self.model.status == GRB.INFEASIBLE:
-            print("\n le PROGRAMME N'A PAS DE SOLUTION!!!")
-            raise Exception("Infeasible")
-        elif self.model.status == GRB.UNBOUNDED:
-            print("\n le PROGRAMME EST NON BORNÉ!!!")
-            raise Exception("Unbounded")
-        else:
-            print("\n le PROGRAMME A UNE SOLUTION!!!")
-            # print the value of objective function
-            print("objective function value: ", self.model.objVal)
-            self.U = {(i, l): self.U[i, l].x for i in range(self.n) for l in range(self.L+1)}
-
-        return self
-
-    def predict_utility(self, X):
-        """Return Decision Function of the MIP for X. - To be completed.
-
-        Parameters:
-        -----------
-        X: np.ndarray
-            (n_samples, n_features) list of features of elements
-        """
-        # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        maxs = np.ones(self.n)*1.01
-        mins = np.ones(self.n)*-0.01
-
-        def get_last_index(x, i):
-            return int(np.floor(self.L * (x - mins[i]) / (maxs[i] - mins[i])))
-
-        
-        def get_bp(i, l):
-            return mins[i] + l * (maxs[i] - mins[i]) / self.L
-        
-        utilities = np.zeros((X.shape[0]))
-        for j in range(X.shape[0]):
-            for i in range(self.n):
-                utilities[j] += self.U[i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[i, get_last_index(X[j, i], i)+1] - self.U[i, get_last_index(X[j, i], i)])
-
-        return utilities
 
 
 class HeuristicModel(BaseModel):
     """Skeleton of Heuristic you have to write as the second exercise.
-    Heuristic is a model that does not use MIP but rather a heuristic to find the best cluster for each element.
-    Heuristic : Genetic algorithm :
-        - Individual : utilitary function for each cluster
-        - Fitness : percentage of pairs explained by at least a cluster
-        - Selection : tournament selection
-        - Crossover : one point crossover
-        - Mutation : random mutation
     """
 
-    def __init__(self, n_pieces, n_clusters, epsilon, batch_size=500):
+    def __init__(self, n_pieces, n_clusters, epsilon):
         """Initialization of the MIP Variables
 
         Parameters
@@ -581,14 +378,11 @@ class HeuristicModel(BaseModel):
         self.L = n_pieces
         self.K = n_clusters
         self.epsilon = epsilon
-        self.batch_size = batch_size
-        self.model = self.instantiate()
+        self.instantiate()
 
     def instantiate(self):
         """Instantiation of the MIP Variables - To be completed."""
         np.random.seed(self.seed)
-        model = Model("TwoClustersMIP")
-        return model
 
     def fit(self, X, Y):
         """Estimation of the parameters - To be completed.
@@ -604,22 +398,17 @@ class HeuristicModel(BaseModel):
 
         self.n = X.shape[1]
         self.P = X.shape[0]
-        maxs = np.ones(self.n)*1.01
-        mins = np.ones(self.n)*-0.01
 
         pairs = X-Y
         self.kmeans = KMeans(n_clusters=self.K, random_state=0).fit(pairs)
         self.clusters = self.kmeans.cluster_centers_
         self.labels = self.kmeans.labels_
-        # print(np.unique(self.labels))
 
 
         # fit a TwoClustersMIP for each cluster
-        # self.models = [UTAMIP(self.L, self.epsilon) for _ in range(self.K)]
-        self.models = [UTAMIP(self.L, self.epsilon) for _ in range(self.K)]
+        self.models = [TwoClustersMIP(self.L, 1, self.epsilon) for _ in range(self.K)]
         for k in range(self.K):
-            indexes = np.where(self.labels == k)
-            indexes = np.random.choice(indexes[0], self.batch_size, replace=False) if len(indexes[0]) > self.batch_size else indexes[0]
+            indexes = np.where(self.labels == k)[0]
             X_k = X[indexes]
             Y_k = Y[indexes]
             self.models[k].fit(X_k, Y_k, plot=False)
@@ -638,7 +427,7 @@ class HeuristicModel(BaseModel):
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
         utilities = np.zeros((X.shape[0], self.K))
         for k in range(self.K):
-            utilities[:, k] = self.models[k].predict_utility(X)
+            utilities[:, k] = self.models[k].predict_utility(X)[:, 0]
         return utilities
 
 
