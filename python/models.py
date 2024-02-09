@@ -163,15 +163,17 @@ class TwoClustersMIP(BaseModel):
     You have to encapsulate your code within this class that will be called for evaluation.
     """
 
-    def __init__(self, n_pieces, n_clusters, epsilon):
+    def __init__(self, n_pieces, n_clusters, epsilon=1e-5):
         """Initialization of the MIP Variables
 
         Parameters
         ----------
         n_pieces: int
             Number of pieces for the utility function of each feature.
-        n°clusters: int
+        n_clusters: int
             Number of clusters to implement in the MIP.
+        epsilon: float
+            Precision of the MIP
         """
         self.seed = 123
         self.L = n_pieces
@@ -185,7 +187,7 @@ class TwoClustersMIP(BaseModel):
         model = Model("TwoClustersMIP")
         return model
 
-    def fit(self, X, Y, plot=True):
+    def fit(self, X, Y, plot=False):
         """Estimation of the parameters - To be completed.
 
         Parameters
@@ -194,6 +196,8 @@ class TwoClustersMIP(BaseModel):
             (n_samples, n_features) features of elements preferred to Y elements
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
+        plot: bool
+            If True, plot the utility functions for each feature and each cluster
         """
         self.n = X.shape[1]
         self.P = X.shape[0]
@@ -361,18 +365,24 @@ class TwoClustersMIP(BaseModel):
 
 
 class HeuristicModel(BaseModel):
-    """Skeleton of Heuristic you have to write as the second exercise.
+    """
+    Heuristic model:
+    - Clusters the data into K clusters using KMeans
+    - Fits a basic UTA MIP model for each cluster
+    - Predicts the utility of each element using the UTA MIP model of the cluster it belongs to
     """
 
-    def __init__(self, n_pieces, n_clusters, epsilon):
+    def __init__(self, n_pieces, n_clusters, epsilon=1e-5):
         """Initialization of the MIP Variables
 
         Parameters
         ----------
         n_pieces: int
             Number of pieces for the utility function of each feature.
-        n°clusters: int
+        n_clusters: int
             Number of clusters to implement in the MIP.
+        epsilon: float
+            Precision of the MIP
         """
         self.seed = 123
         self.L = n_pieces
